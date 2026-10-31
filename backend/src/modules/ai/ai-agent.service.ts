@@ -15,7 +15,7 @@
 // =============================================================================
 import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { MessageSender, type ChatSession, type Lead, type Message, type ProductLine } from "@prisma/client";
+import { MessageSender, type Channel, type ChatSession, type Lead, type Message, type ProductLine } from "@prisma/client";
 import { env } from "../../config/env";
 import { anthropic } from "../../lib/anthropic";
 import { KeyedMutex } from "../../lib/keyed-mutex";
@@ -43,6 +43,8 @@ export interface IncomingMessageInput {
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+  /** Channel asal pesan (default WhatsApp). */
+  channel?: Channel;
 }
 
 export type ProcessOutcome =
@@ -68,7 +70,7 @@ export async function processIncomingMessage(input: IncomingMessageInput): Promi
   // satu per satu (mencegah sesi ganda & pemanggilan Claude paralel).
   return customerMutex.run(input.externalId, async () => {
     const lead = await upsertLead(input);
-    const session = await getOrCreateActiveSession(lead.id);
+    const session = await getOrCreateActiveSession(lead.id, input.channel);
 
     const customerMessage = await prisma.message.create({
       data: { sessionId: session.id, sender: MessageSender.CUSTOMER, content: input.text },
@@ -277,12 +279,12 @@ function upsertLead(input: IncomingMessageInput): Promise<Lead> {
 }
 
 /** Ambil sesi aktif (bukan closed) milik lead, atau buat sesi baru. */
-async function getOrCreateActiveSession(leadId: string): Promise<ChatSession> {
+async function getOrCreateActiveSession(leadId: string, channel: Channel = "WHATSAPP"): Promise<ChatSession> {
   const existing = await prisma.chatSession.findFirst({
     where: { leadId, status: { not: "closed" } },
     orderBy: { createdAt: "desc" },
   });
-  return existing ?? prisma.chatSession.create({ data: { leadId } });
+  return existing ?? prisma.chatSession.create({ data: { leadId, channel } });
 }
 
 const touchSession = (sessionId: string) =>

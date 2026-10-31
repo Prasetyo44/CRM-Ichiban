@@ -12,6 +12,7 @@
 // =============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { io, type Socket } from "socket.io-client";
+import { ChannelBadge } from "./collaboration/ChannelBadge";
 import { errorMessage, useApi } from "../lib/api";
 import type {
   ClientToServerEvents,
@@ -328,7 +329,10 @@ function SessionList({
                   active ? "bg-indigo-50" : "hover:bg-slate-50"
                 }`}
               >
-                <div className="truncate font-medium">{leadTitle(s.lead)}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium">{leadTitle(s.lead)}</span>
+                  <ChannelBadge channel={s.channel} />
+                </div>
                 <div className="mt-1">
                   <LeadBadges lead={s.lead} />
                 </div>

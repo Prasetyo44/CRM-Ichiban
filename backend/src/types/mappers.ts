@@ -39,6 +39,7 @@ export const toSessionDTO = (
   const last = s.messages?.at(-1);
   return {
     id: s.id,
+    channel: s.channel,
     status: s.status,
     assignedAgentId: s.assignedAgentId,
     assignedAt: s.assignedAt?.toISOString() ?? null,
