@@ -11,6 +11,8 @@ import { timingSafeEqual } from "node:crypto";
 import { PipelineStage } from "@prisma/client";
 import { z } from "zod";
 import { env } from "../../config/env";
+import { currentUser, requireAgent } from "../../lib/auth";
+import { HttpError } from "../../lib/http-error";
 import { prisma } from "../../lib/prisma";
 import { emitToAgent } from "../../realtime/socket";
 import { leadInclude, toLeadDTO, toMessageDTO, toSessionDTO } from "../../types/mappers";
@@ -23,13 +25,6 @@ export const chatRouter = Router();
 // Middleware
 // ---------------------------------------------------------------------------
 
-/** Error 4xx yang aman ditampilkan ke klien. */
-export class HttpError extends Error {
-  constructor(public readonly status: number, message: string) {
-    super(message);
-  }
-}
-
 function verifyWebhookSecret(req: Request, _res: Response, next: NextFunction): void {
   const given = Buffer.from(req.header("x-webhook-secret") ?? "");
   const expected = Buffer.from(env.WEBHOOK_SECRET);
@@ -37,21 +32,7 @@ function verifyWebhookSecret(req: Request, _res: Response, next: NextFunction): 
   next(ok ? undefined : new HttpError(401, "Webhook secret tidak valid"));
 }
 
-/**
- * Identitas sales dari header `x-agent-id`.
- * CATATAN PRODUKSI: ganti dengan verifikasi JWT/session cookie.
- */
-async function requireAgent(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const agentId = req.header("x-agent-id");
-  const agent = agentId
-    ? await prisma.user.findFirst({ where: { id: agentId, isActive: true } })
-    : null;
-  if (!agent) return next(new HttpError(401, "Agent tidak terautentikasi"));
-  res.locals.agentId = agent.id;
-  next();
-}
-
-const agentIdOf = (res: Response): string => res.locals.agentId as string;
+const agentIdOf = (res: Response): string => currentUser(res).id;
 
 /** Pastikan sesi memang milik agent yang login (cegah akses data lead orang lain). */
 async function loadOwnedSession(sessionId: string, agentId: string) {
