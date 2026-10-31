@@ -5,9 +5,11 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { ZodError } from "zod";
 import { env } from "./config/env";
 import { prisma } from "./lib/prisma";
+import { requireAgent } from "./lib/auth";
 import { HttpError } from "./lib/http-error";
 import { chatRouter } from "./modules/chat/chat.routes";
 import { salesRouter } from "./modules/sales/sales.routes";
+import { serviceRouter } from "./modules/service/service.routes";
 import { initSocket } from "./realtime/socket";
 
 const app = express();
@@ -18,7 +20,8 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 app.use(chatRouter);
-app.use("/api", salesRouter);
+// Semua modul CRM di bawah /api wajib login agent.
+app.use("/api", requireAgent, salesRouter, serviceRouter);
 
 // Error handler terpusat (Express 5 meneruskan error async secara otomatis).
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

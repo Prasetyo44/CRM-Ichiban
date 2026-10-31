@@ -2,6 +2,7 @@
 // ditambahkan ke daftar MODULES (satu sumber untuk menu & routing sederhana).
 import { useState, type ReactNode } from "react";
 import SalesChatDashboard from "./components/SalesChatDashboard";
+import ServiceDesk from "./components/service/ServiceDesk";
 import MyTasks from "./components/sales/MyTasks";
 import SalesPipelineBoard from "./components/sales/SalesPipelineBoard";
 import { useApi, type ApiFn } from "./lib/api";
@@ -20,6 +21,7 @@ const MODULES: readonly ModuleDef[] = [
   },
   { key: "pipeline", label: "📊 Pipeline", render: ({ api }) => <SalesPipelineBoard api={api} /> },
   { key: "tasks", label: "✅ Tugas", render: ({ api }) => <MyTasks api={api} /> },
+  { key: "service", label: "🛠️ Service", render: ({ api }) => <ServiceDesk api={api} /> },
 ];
 
 export default function AppShell({ apiBaseUrl, agentId }: { apiBaseUrl: string; agentId: string }) {

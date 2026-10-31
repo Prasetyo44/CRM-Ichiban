@@ -20,14 +20,15 @@ import {
   TaskStatus,
 } from "@prisma/client";
 import { z } from "zod";
-import { assertOwner, currentUser, isManager, ownerScope, requireAgent, type AuthUser } from "../../lib/auth";
+import { assertOwner, currentUser, isManager, ownerScope, type AuthUser } from "../../lib/auth";
 import { HttpError, notFound } from "../../lib/http-error";
 import { prisma } from "../../lib/prisma";
 import { calculateQuotation } from "./quotation.calc";
-import { changeDealStage, convertLead, nextDocumentNumber } from "./sales.service";
+import { nextDocumentNumber } from "../../lib/document-number";
+import { changeDealStage, convertLead } from "./sales.service";
 
+/** Dipasang di server.ts di belakang middleware `requireAgent`. */
 export const salesRouter = Router();
-salesRouter.use(requireAgent);
 
 // ---------------------------------------------------------------------------
 // Helper bersama

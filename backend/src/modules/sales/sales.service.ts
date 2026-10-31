@@ -1,26 +1,9 @@
 // Layanan transaksional modul Sales: konversi lead, perubahan stage, nomor dokumen.
-import { Prisma, type DealStage } from "@prisma/client";
+import type { DealStage } from "@prisma/client";
 import type { AuthUser } from "../../lib/auth";
 import { HttpError, notFound } from "../../lib/http-error";
 import { prisma } from "../../lib/prisma";
 import { STAGE_PROBABILITY, isClosedStage, validateStageChange } from "./deal.rules";
-
-type Tx = Prisma.TransactionClient;
-
-/**
- * Nomor dokumen berurutan & unik, aman untuk request paralel:
- * INSERT ... ON CONFLICT DO UPDATE bersifat atomik di PostgreSQL.
- */
-export async function nextDocumentNumber(tx: Tx, prefix: string, at = new Date()): Promise<string> {
-  const period = `${at.getFullYear()}${String(at.getMonth() + 1).padStart(2, "0")}`;
-  const key = `${prefix}-${period}`;
-  const [row] = await tx.$queryRaw<{ value: number }[]>`
-    INSERT INTO counters (key, value) VALUES (${key}, 1)
-    ON CONFLICT (key) DO UPDATE SET value = counters.value + 1
-    RETURNING value`;
-  if (!row) throw new Error("Gagal membuat nomor dokumen");
-  return `${key}-${String(row.value).padStart(4, "0")}`;
-}
 
 /**
  * Konversi Lead hasil chat menjadi data CRM:
