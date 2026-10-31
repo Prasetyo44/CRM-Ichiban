@@ -87,15 +87,18 @@ model User {
 
   /// Spesialisasi agent: kombinasi lini produk x segmen (lihat AgentSkill).
   skills           AgentSkill[]
-  ownedAccounts    Account[]     @relation("AccountOwner")
-  ownedContacts    Contact[]     @relation("ContactOwner")
-  ownedDeals       Deal[]        @relation("DealOwner")
-  activities       Activity[]    @relation("ActivityAuthor")
-  assignedTasks    Task[]        @relation("TaskAssignee")
-  createdTasks     Task[]        @relation("TaskCreator")
-  quotations       Quotation[]   @relation("QuotationCreator")
-  assignedSessions ChatSession[] @relation("AssignedAgent")
-  sentMessages     Message[]     @relation("MessageAuthor")
+  ownedAccounts    Account[]       @relation("AccountOwner")
+  ownedContacts    Contact[]       @relation("ContactOwner")
+  ownedDeals       Deal[]          @relation("DealOwner")
+  activities       Activity[]      @relation("ActivityAuthor")
+  assignedTasks    Task[]          @relation("TaskAssignee")
+  createdTasks     Task[]          @relation("TaskCreator")
+  quotations       Quotation[]     @relation("QuotationCreator")
+  assignedTickets  Ticket[]        @relation("TicketAssignee")
+  createdTickets   Ticket[]        @relation("TicketCreator")
+  ticketComments   TicketComment[] @relation("TicketCommentAuthor")
+  assignedSessions ChatSession[]   @relation("AssignedAgent")
+  sentMessages     Message[]       @relation("MessageAuthor")
 
   // Index untuk query routing: filter role+isActive lalu urutkan lastAssignedAt.
   @@index([role, isActive, lastAssignedAt])
@@ -126,6 +129,7 @@ model ProductLine {
   agentSkills AgentSkill[]
   leads       Lead[]
   deals       Deal[]
+  tickets     Ticket[]
 
   @@map("product_lines")
 }
@@ -294,6 +298,7 @@ model Account {
   tasks      Task[]
   quotations Quotation[]
   leads      Lead[]
+  tickets    Ticket[]
 
   @@index([ownerId])
   @@index([name])
@@ -319,6 +324,7 @@ model Contact {
   activities Activity[]
   tasks      Task[]
   leads      Lead[]
+  tickets    Ticket[]
 
   @@index([ownerId])
   @@index([accountId])
@@ -356,6 +362,7 @@ model Deal {
   activities  Activity[]
   tasks       Task[]
   quotations  Quotation[]
+  tickets     Ticket[]
 
   @@index([ownerId, stage])
   @@index([productLineId, stage])
@@ -469,4 +476,93 @@ model Counter {
   value Int    @default(0)
 
   @@map("counters")
+}
+
+// =============================================================================
+// MODUL SERVICE (CRM Operasional — layanan purna jual)
+// -----------------------------------------------------------------------------
+// Tiket keluhan/permintaan bantuan (mis. cat mengelupas, warna tidak sesuai,
+// pengiriman terlambat, cara aplikasi) dengan target SLA per prioritas.
+// =============================================================================
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketCategory {
+  PRODUCT_QUALITY
+  DELIVERY
+  TECHNICAL_SUPPORT
+  WARRANTY_CLAIM
+  BILLING
+  OTHER
+}
+
+model Ticket {
+  id                 String         @id @default(cuid())
+  /// Nomor unik berurutan per bulan, mis. "TKT-202610-0003".
+  number             String         @unique
+  subject            String
+  description        String
+  category           TicketCategory @default(OTHER)
+  priority           TicketPriority @default(NORMAL)
+  status             TicketStatus   @default(OPEN)
+  customerType       CustomerType?
+  productLineId      String?
+  /// Nomor batch produksi pada kemasan — penting untuk investigasi kualitas.
+  batchNumber        String?
+  accountId          String?
+  contactId          String?
+  dealId             String?
+  assigneeId         String?
+  createdById        String
+  /// Target SLA dihitung saat tiket dibuat / prioritas diubah (lihat sla.ts).
+  firstResponseDueAt DateTime
+  resolutionDueAt    DateTime
+  firstRespondedAt   DateTime?
+  resolvedAt         DateTime?
+  closedAt           DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  productLine ProductLine?    @relation(fields: [productLineId], references: [id], onDelete: SetNull)
+  account     Account?        @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  contact     Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  deal        Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  assignee    User?           @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy   User            @relation("TicketCreator", fields: [createdById], references: [id])
+  comments    TicketComment[]
+
+  @@index([assigneeId, status])
+  @@index([status, resolutionDueAt])
+  @@index([accountId])
+  @@index([contactId])
+  @@map("tickets")
+}
+
+model TicketComment {
+  id         String   @id @default(cuid())
+  ticketId   String
+  authorId   String
+  body       String
+  /// true = catatan internal tim (tidak dikirim ke customer).
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation("TicketCommentAuthor", fields: [authorId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_comments")
 }

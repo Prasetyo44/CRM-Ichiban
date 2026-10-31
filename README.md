@@ -83,7 +83,7 @@ frontend/
 |---|---|---|---|
 | Inbox Chat + AI | Operasional | ✅ | Kualifikasi AI B2B/B2C, routing round robin, chat real-time |
 | Sales | Operasional | ✅ | Account (perusahaan), Contact, konversi Lead → Deal, pipeline 6 stage, aktivitas, tugas, quotation (PPN, nomor otomatis) |
-| Service | Operasional | ⏳ | Tiket keluhan/komplain + SLA |
+| Service | Operasional | ✅ | Tiket keluhan dengan SLA per prioritas, catatan internal, nomor batch produk |
 | Marketing | Operasional | ⏳ | Segmen & kampanye broadcast |
 | Analitik | Analitis | ⏳ | Dashboard KPI, funnel, performa sales/lini produk |
 | Kolaborasi | Kolaboratif | ⏳ | Catatan internal, @mention, timeline 360°, inbox multi-channel |
@@ -94,8 +94,15 @@ frontend/
 - **Quotation:** total dihitung di server dengan Decimal (diskon per item, diskon nota, PPN). Nomor `QUO-YYYYMM-0001` dibuat lewat counter atomik, sehingga tidak bisa dobel walau dibuat bersamaan. Nilai deal otomatis mengikuti quotation terakhir.
 - **Hak akses:** sales agent hanya melihat data miliknya, sedangkan `SALES_MANAGER`/`ADMIN` melihat semua dan bisa memindahkan kepemilikan.
 
+**Modul Service:**
+- **Tiket** dengan kategori (kualitas produk, pengiriman, bantuan teknis, klaim garansi, tagihan), lini produk, dan **nomor batch**. Nomor batch memudahkan investigasi kualitas cat.
+- **SLA** dihitung otomatis dari prioritas (`modules/service/sla.ts`). Targetnya: URGENT 1 jam respons / 8 jam selesai, HIGH 4 / 24 jam, NORMAL 8 / 72 jam, LOW 24 / 120 jam. Status SLA ada empat: Aman, Hampir lewat (sisa ≤25%), Lewat SLA, dan Tercapai.
+- Balasan publik pertama tercatat sebagai respons pertama dan otomatis memindahkan tiket ke status "Diproses". Catatan internal tidak dihitung sebagai respons.
+- **Penanggung jawab default** adalah pemilik account/contact. Agent bisa mengambil tiket dari antrean, sedangkan manager bisa menugaskan ke siapa saja.
+
 ![Pipeline](docs/screenshots/pipeline.png)
 ![Detail deal](docs/screenshots/deal-detail.png)
+![Service desk](docs/screenshots/service-desk.png)
 
 ## 6. Menjalankan
 
