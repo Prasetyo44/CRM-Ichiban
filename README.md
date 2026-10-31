@@ -84,7 +84,7 @@ frontend/
 | Inbox Chat + AI | Operasional | ✅ | Kualifikasi AI B2B/B2C, routing round robin, chat real-time |
 | Sales | Operasional | ✅ | Account (perusahaan), Contact, konversi Lead → Deal, pipeline 6 stage, aktivitas, tugas, quotation (PPN, nomor otomatis) |
 | Service | Operasional | ✅ | Tiket keluhan dengan SLA per prioritas, catatan internal, nomor batch produk |
-| Marketing | Operasional | ⏳ | Segmen & kampanye broadcast |
+| Marketing | Operasional | ✅ | Segmen audiens dinamis, kampanye broadcast WhatsApp/email (draft, terjadwal, kirim sekarang), consent & opt-out STOP, atribusi deal |
 | Analitik | Analitis | ✅ | KPI penjualan, funnel kohort lead→won, performa per sales & lini produk, segmen, kepatuhan SLA |
 | Kolaborasi | Kolaboratif | ⏳ | Catatan internal, @mention, timeline 360°, inbox multi-channel |
 
@@ -100,6 +100,16 @@ frontend/
 - Balasan publik pertama tercatat sebagai respons pertama dan otomatis memindahkan tiket ke status "Diproses". Catatan internal tidak dihitung sebagai respons.
 - **Penanggung jawab default** adalah pemilik account/contact. Agent bisa mengambil tiket dari antrean, sedangkan manager bisa menugaskan ke siapa saja.
 
+**Modul Marketing** (`/api/marketing/*`):
+- **Segmen audiens** adalah filter dinamis atas Contact: segmen B2B/B2C, lini produk yang pernah dibeli/ditawarkan, kota, bidang usaha, dan status pembelian (sudah/belum pernah beli). Anggotanya dihitung ulang setiap dipakai, dan pembuat segmen menampilkan pratinjau jumlah audiens secara langsung.
+- **Consent (UU PDP):** broadcast hanya dikirim ke kontak dengan `marketingOptIn = true` yang belum berhenti berlangganan. Setiap pesan otomatis diberi kalimat "Balas STOP". Bila customer membalas `STOP`/`BERHENTI` lewat webhook chat, consent-nya dicabut tanpa melibatkan AI.
+- **Kampanye** bisa disimpan sebagai draft, dijadwalkan, atau dikirim langsung. Template mendukung `{{nama}}`, `{{perusahaan}}`, dan `{{kota}}`. Placeholder yang salah ketik ditolak saat disimpan.
+- **Tidak ada pesan ganda:** peluncuran mengunci baris kampanye, penerima unik per (kampanye, kontak) dan per alamat, dan antrean dikirim per batch dengan `FOR UPDATE SKIP LOCKED`, sehingga beberapa instance server bisa berbagi antrean yang sama. Uji: `MARKETING_SEND_DELAY_MS=150 npx tsx scripts/broadcast-race-test.ts` (3 peluncuran bersamaan + 2 proses pengirim; 31 kontak menerima tepat 1 pesan).
+- **Scheduler** di server meluncurkan kampanye terjadwal tiap 30 detik dan melanjutkan pengiriman yang terputus bila server restart. Kampanye bisa dibatalkan kapan saja, dan sisa antrean ditandai "dilewati".
+- **Atribusi:** detail kampanye menampilkan deal (di lini produk kampanye) yang dibuat penerima dalam 30 hari setelah pesan diterima, beserta nilai deal yang menang.
+- Hanya manager/admin yang boleh membuat dan mengirim kampanye; sales agent bisa melihatnya untuk follow-up.
+- Data contoh: `npx tsx scripts/demo-marketing.ts` (setelah `demo-data.ts`).
+
 **Modul Analitik** (`GET /api/analytics/overview?from&to`, maksimal 366 hari):
 - **KPI:** nilai pipeline terbuka, forecast berbobot, penjualan menang, win rate, rata-rata nilai deal, dan rata-rata siklus penjualan.
 - **Funnel kohort:** lead masuk → lolos AI → dialihkan → menjadi deal → menang. Setiap tahap mensyaratkan tahap sebelumnya, jadi angkanya selalu menurun.
@@ -111,6 +121,9 @@ frontend/
 ![Detail deal](docs/screenshots/deal-detail.png)
 ![Service desk](docs/screenshots/service-desk.png)
 ![Analitik](docs/screenshots/analytics.png)
+![Kampanye marketing](docs/screenshots/marketing-campaign.png)
+![Kampanye baru](docs/screenshots/marketing-new-campaign.png)
+![Segmen audiens](docs/screenshots/marketing-segment.png)
 
 ## 6. Menjalankan
 
@@ -148,6 +161,7 @@ Nilai `mode` pada respons: `ai_replied` (masih kualifikasi), `handed_off` (baru 
 
 - Ganti autentikasi simulasi (`x-agent-id` / `auth.agentId`) dengan JWT.
 - Isi `modules/chat/outbound.ts` dengan API channel sebenarnya (mis. WhatsApp Cloud API).
+- Isi `modules/marketing/marketing.outbound.ts` dengan WhatsApp Business API (pesan promosi wajib memakai template yang sudah disetujui Meta) dan penyedia email (SES/SendGrid). Sesuaikan `MARKETING_SEND_DELAY_MS` dengan batas kirim penyedia.
 - Tambahkan job berkala untuk sesi `pending_assignment` (saat ini dicoba ulang ketika customer mengirim pesan berikutnya).
 - Isi `product_lines.aiKnowledge` dengan info produk resmi, dan sesuaikan katalog serta skill agent dengan struktur tim penjualan sebenarnya.
 - Pindahkan tipe DTO ke paket `shared` di monorepo agar backend & frontend memakai satu definisi.

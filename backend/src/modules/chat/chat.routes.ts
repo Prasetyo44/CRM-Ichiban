@@ -17,6 +17,7 @@ import { prisma } from "../../lib/prisma";
 import { emitToAgent } from "../../realtime/socket";
 import { leadInclude, toLeadDTO, toMessageDTO, toSessionDTO } from "../../types/mappers";
 import { processIncomingMessage } from "../ai/ai-agent.service";
+import { handleOptOutKeyword } from "../marketing/campaign.service";
 import { sendToCustomer } from "./outbound";
 
 export const chatRouter = Router();
@@ -58,6 +59,17 @@ const IncomingSchema = z.object({
 
 chatRouter.post("/webhook/incoming-message", verifyWebhookSecret, async (req, res) => {
   const input = IncomingSchema.parse(req.body);
+
+  // "STOP" dari kontak penerima broadcast = cabut persetujuan marketing.
+  // Bukan kontak opt-in? Pesan diteruskan ke alur chat biasa.
+  const unsubscribed = await handleOptOutKeyword(input.externalId, input.text);
+  if (unsubscribed > 0) {
+    const reply = "Baik, Anda tidak akan menerima info promo Ichiban lagi. Chat ini tetap bisa dipakai untuk bertanya kapan saja.";
+    await sendToCustomer(input.externalId, reply);
+    res.json({ mode: "unsubscribed", reply });
+    return;
+  }
+
   const outcome = await processIncomingMessage(input);
 
   // Balasan AI / auto-reply dikirim balik ke channel customer.

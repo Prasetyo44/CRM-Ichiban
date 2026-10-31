@@ -97,6 +97,8 @@ model User {
   assignedTickets  Ticket[]        @relation("TicketAssignee")
   createdTickets   Ticket[]        @relation("TicketCreator")
   ticketComments   TicketComment[] @relation("TicketCommentAuthor")
+  segments         Segment[]       @relation("SegmentCreator")
+  campaigns        Campaign[]      @relation("CampaignCreator")
   assignedSessions ChatSession[]   @relation("AssignedAgent")
   sentMessages     Message[]       @relation("MessageAuthor")
 
@@ -130,6 +132,7 @@ model ProductLine {
   leads       Lead[]
   deals       Deal[]
   tickets     Ticket[]
+  campaigns   Campaign[]
 
   @@map("product_lines")
 }
@@ -315,6 +318,12 @@ model Contact {
   email     String?
   city      String?
   ownerId   String
+  /// Persetujuan menerima pesan marketing (UU PDP). Broadcast HANYA dikirim
+  /// ke kontak dengan marketingOptIn = true.
+  marketingOptIn   Boolean   @default(false)
+  marketingOptInAt DateTime?
+  /// Terisi saat kontak berhenti berlangganan (mis. membalas "STOP").
+  unsubscribedAt   DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -325,6 +334,7 @@ model Contact {
   tasks      Task[]
   leads      Lead[]
   tickets    Ticket[]
+  campaignRecipients CampaignRecipient[]
 
   @@index([ownerId])
   @@index([accountId])
@@ -565,4 +575,99 @@ model TicketComment {
 
   @@index([ticketId, createdAt])
   @@map("ticket_comments")
+}
+
+// =============================================================================
+// MODUL MARKETING — segmen audiens & kampanye broadcast
+// =============================================================================
+
+enum CampaignChannel {
+  WHATSAPP
+  EMAIL
+}
+
+/// DRAFT -> (SCHEDULED) -> SENDING -> SENT. CANCELLED bisa dari DRAFT/SCHEDULED/SENDING.
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  FAILED
+  /// Dilewati saat pengiriman (mis. kontak berhenti berlangganan setelah antrean dibuat).
+  SKIPPED
+}
+
+/// Segmen = filter dinamis atas Contact. Anggota dihitung ulang setiap kali
+/// dipakai, jadi kontak baru otomatis ikut. Bentuk `filter` divalidasi zod
+/// (lihat modules/marketing/segment.filter.ts).
+model Segment {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  filter      Json
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy User       @relation("SegmentCreator", fields: [createdById], references: [id])
+  campaigns Campaign[]
+
+  @@map("segments")
+}
+
+model Campaign {
+  id            String          @id @default(cuid())
+  name          String
+  channel       CampaignChannel
+  segmentId     String
+  /// Subjek email (diabaikan untuk WhatsApp).
+  subject       String?
+  /// Template pesan; placeholder: {{nama}}, {{perusahaan}}, {{kota}}.
+  body          String
+  /// Lini produk yang dipromosikan (untuk atribusi deal di laporan).
+  productLineId String?
+  status        CampaignStatus  @default(DRAFT)
+  scheduledAt   DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdById   String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  segment     Segment             @relation(fields: [segmentId], references: [id])
+  productLine ProductLine?        @relation(fields: [productLineId], references: [id], onDelete: SetNull)
+  createdBy   User                @relation("CampaignCreator", fields: [createdById], references: [id])
+  recipients  CampaignRecipient[]
+
+  @@index([status, scheduledAt])
+  @@map("campaigns")
+}
+
+/// Satu baris per (kampanye, kontak). Unique constraint menjamin satu kontak
+/// tidak pernah menerima kampanye yang sama dua kali, sekalipun peluncuran
+/// dipicu bersamaan oleh scheduler dan tombol "Kirim sekarang".
+model CampaignRecipient {
+  id         String          @id @default(cuid())
+  campaignId String
+  contactId  String
+  /// Alamat yang dibekukan saat antrean dibuat (nomor WA / email).
+  address    String
+  status     RecipientStatus @default(PENDING)
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime        @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+  @@index([contactId])
+  @@map("campaign_recipients")
 }

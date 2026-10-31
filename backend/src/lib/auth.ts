@@ -36,3 +36,8 @@ export const ownerScope = (user: AuthUser): { ownerId?: string } => (isManager(u
 export function assertOwner(user: AuthUser, ownerId: string, what: string): void {
   if (!isManager(user) && ownerId !== user.id) throw new HttpError(404, `${what} tidak ditemukan`);
 }
+
+/** Hanya manager/admin (mis. membuat & meluncurkan kampanye broadcast). */
+export function assertManager(user: AuthUser, action: string): void {
+  if (!isManager(user)) throw new HttpError(403, `Hanya manager yang boleh ${action}`);
+}
