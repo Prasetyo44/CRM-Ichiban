@@ -85,7 +85,7 @@ frontend/
 | Sales | Operasional | ✅ | Account (perusahaan), Contact, konversi Lead → Deal, pipeline 6 stage, aktivitas, tugas, quotation (PPN, nomor otomatis) |
 | Service | Operasional | ✅ | Tiket keluhan dengan SLA per prioritas, catatan internal, nomor batch produk |
 | Marketing | Operasional | ⏳ | Segmen & kampanye broadcast |
-| Analitik | Analitis | ⏳ | Dashboard KPI, funnel, performa sales/lini produk |
+| Analitik | Analitis | ✅ | KPI penjualan, funnel kohort lead→won, performa per sales & lini produk, segmen, kepatuhan SLA |
 | Kolaborasi | Kolaboratif | ⏳ | Catatan internal, @mention, timeline 360°, inbox multi-channel |
 
 **Modul Sales:**
@@ -100,9 +100,17 @@ frontend/
 - Balasan publik pertama tercatat sebagai respons pertama dan otomatis memindahkan tiket ke status "Diproses". Catatan internal tidak dihitung sebagai respons.
 - **Penanggung jawab default** adalah pemilik account/contact. Agent bisa mengambil tiket dari antrean, sedangkan manager bisa menugaskan ke siapa saja.
 
+**Modul Analitik** (`GET /api/analytics/overview?from&to`, maksimal 366 hari):
+- **KPI:** nilai pipeline terbuka, forecast berbobot, penjualan menang, win rate, rata-rata nilai deal, dan rata-rata siklus penjualan.
+- **Funnel kohort:** lead masuk → lolos AI → dialihkan → menjadi deal → menang. Setiap tahap mensyaratkan tahap sebelumnya, jadi angkanya selalu menurun.
+- Performa **per sales** dan **per lini produk**, jumlah lead per segmen, serta kesehatan layanan: kepatuhan SLA, jumlah tiket lewat SLA, dan rata-rata respons pertama.
+- Manager melihat data seluruh tim, sedangkan sales agent hanya melihat datanya sendiri.
+- Data contoh untuk mencoba dashboard: `npx tsx scripts/demo-data.ts`.
+
 ![Pipeline](docs/screenshots/pipeline.png)
 ![Detail deal](docs/screenshots/deal-detail.png)
 ![Service desk](docs/screenshots/service-desk.png)
+![Analitik](docs/screenshots/analytics.png)
 
 ## 6. Menjalankan
 

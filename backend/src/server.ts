@@ -8,6 +8,7 @@ import { prisma } from "./lib/prisma";
 import { requireAgent } from "./lib/auth";
 import { HttpError } from "./lib/http-error";
 import { chatRouter } from "./modules/chat/chat.routes";
+import { analyticsRouter } from "./modules/analytics/analytics.routes";
 import { salesRouter } from "./modules/sales/sales.routes";
 import { serviceRouter } from "./modules/service/service.routes";
 import { initSocket } from "./realtime/socket";
@@ -21,7 +22,7 @@ app.get("/health", (_req, res) => {
 });
 app.use(chatRouter);
 // Semua modul CRM di bawah /api wajib login agent.
-app.use("/api", requireAgent, salesRouter, serviceRouter);
+app.use("/api", requireAgent, salesRouter, serviceRouter, analyticsRouter);
 
 // Error handler terpusat (Express 5 meneruskan error async secara otomatis).
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
