@@ -86,7 +86,7 @@ frontend/
 | Service | Operasional | ✅ | Tiket keluhan dengan SLA per prioritas, catatan internal, nomor batch produk |
 | Marketing | Operasional | ✅ | Segmen audiens dinamis, kampanye broadcast WhatsApp/email (draft, terjadwal, kirim sekarang), consent & opt-out STOP, atribusi deal |
 | Analitik | Analitis | ✅ | KPI penjualan, funnel kohort lead→won, performa per sales & lini produk, segmen, kepatuhan SLA |
-| Kolaborasi | Kolaboratif | ⏳ | Catatan internal, @mention, timeline 360°, inbox multi-channel |
+| Kolaborasi | Kolaboratif | ✅ | Customer 360° (timeline lintas modul), catatan internal + @mention, notifikasi real-time, inbox multi-channel |
 
 **Modul Sales:**
 - **Konversi lead** (`POST /api/leads/:id/convert`) membuat Account + Contact + Deal untuk B2B, atau Contact + Deal untuk B2C. Ringkasan AI ikut menjadi catatan pertama di timeline. Prosesnya idempoten dan aman bila diklik ganda.
@@ -110,6 +110,14 @@ frontend/
 - Hanya manager/admin yang boleh membuat dan mengirim kampanye; sales agent bisa melihatnya untuk follow-up.
 - Data contoh: `npx tsx scripts/demo-marketing.ts` (setelah `demo-data.ts`).
 
+**Modul Kolaborasi:**
+- **Customer 360°** (`GET /api/timeline/:entityType/:id`) menggabungkan semua titik sentuh customer dalam satu urutan waktu: chat (beserta channel dan ringkasan AI), deal dibuat/menang/kalah, aktivitas, tugas, quotation, tiket beserta balasannya, kampanye marketing yang diterima, dan catatan tim. Timeline perusahaan mencakup semua kontak, deal, dan tiket di bawahnya. Ada filter Penjualan / Chat / Service / Marketing / Catatan.
+- **Catatan internal + @mention** bisa ditambahkan di Account, Contact, Deal, dan Tiket. Saran nama muncul saat mengetik `@`. Mention dikirim sebagai id user (bukan ditebak dari teks), dan hanya nama yang masih ada di teks yang dinotifikasi.
+- **Berbagi konteks lewat mention:** rekan yang di-@mention ikut bisa membuka entitas itu tanpa memindahkan kepemilikan. Agent lain tetap mendapat 404.
+- **Notifikasi real-time** (lonceng di navigasi, Socket.IO `notification:new`) dikirim untuk mention dan tiket yang ditugaskan. Klik notifikasi langsung membuka Customer 360 entitas terkait.
+- **Inbox multi-channel:** webhook menerima `channel` (`WHATSAPP`, `WEB_CHAT`, `INSTAGRAM`, `FACEBOOK`, `EMAIL`). Channel disimpan per sesi dan tampil sebagai badge di inbox serta timeline.
+- Data contoh: `npx tsx scripts/demo-collaboration.ts` (setelah `demo-marketing.ts`).
+
 **Modul Analitik** (`GET /api/analytics/overview?from&to`, maksimal 366 hari):
 - **KPI:** nilai pipeline terbuka, forecast berbobot, penjualan menang, win rate, rata-rata nilai deal, dan rata-rata siklus penjualan.
 - **Funnel kohort:** lead masuk → lolos AI → dialihkan → menjadi deal → menang. Setiap tahap mensyaratkan tahap sebelumnya, jadi angkanya selalu menurun.
@@ -124,6 +132,8 @@ frontend/
 ![Kampanye marketing](docs/screenshots/marketing-campaign.png)
 ![Kampanye baru](docs/screenshots/marketing-new-campaign.png)
 ![Segmen audiens](docs/screenshots/marketing-segment.png)
+![Customer 360](docs/screenshots/customer-360.png)
+![Notifikasi](docs/screenshots/notifications.png)
 
 ## 6. Menjalankan
 
@@ -152,7 +162,7 @@ curl -X POST http://localhost:4000/webhook/incoming-message \
 
 curl -X POST http://localhost:4000/webhook/incoming-message \
   -H 'Content-Type: application/json' -H 'x-webhook-secret: <WEBHOOK_SECRET>' \
-  -d '{"externalId":"6281300002","text":"Kami PT Galangan Samudra di Batam, 200 karyawan, butuh cat antifouling untuk docking"}'
+  -d '{"externalId":"6281300002","channel":"INSTAGRAM","text":"Kami PT Galangan Samudra di Batam, 200 karyawan, butuh cat antifouling untuk docking"}'
 ```
 
 Nilai `mode` pada respons: `ai_replied` (masih kualifikasi), `handed_off` (baru dialihkan ke sales), `forwarded_to_agent` (AI diam, pesan diteruskan ke sales), atau `waiting_for_agent`.

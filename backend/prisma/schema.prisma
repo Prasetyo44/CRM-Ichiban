@@ -99,6 +99,10 @@ model User {
   ticketComments   TicketComment[] @relation("TicketCommentAuthor")
   segments         Segment[]       @relation("SegmentCreator")
   campaigns        Campaign[]      @relation("CampaignCreator")
+  notes            Note[]          @relation("NoteAuthor")
+  noteMentions     NoteMention[]
+  notifications    Notification[]  @relation("NotificationRecipient")
+  notificationsSent Notification[] @relation("NotificationActor")
   assignedSessions ChatSession[]   @relation("AssignedAgent")
   sentMessages     Message[]       @relation("MessageAuthor")
 
@@ -197,6 +201,8 @@ model Lead {
 model ChatSession {
   id              String            @id @default(cuid())
   leadId          String
+  /// Channel asal percakapan (inbox multi-channel).
+  channel         Channel           @default(WHATSAPP)
   status          ChatSessionStatus @default(ai_qualifying)
   assignedAgentId String?
   assignedAt      DateTime?
@@ -670,4 +676,83 @@ model CampaignRecipient {
   @@index([campaignId, status])
   @@index([contactId])
   @@map("campaign_recipients")
+}
+
+// =============================================================================
+// MODUL KOLABORASI — inbox multi-channel, catatan internal + @mention,
+// notifikasi, dan timeline 360° customer
+// =============================================================================
+
+/// Channel masuknya percakapan customer.
+enum Channel {
+  WHATSAPP
+  WEB_CHAT
+  INSTAGRAM
+  FACEBOOK
+  EMAIL
+}
+
+/// Jenis entitas yang bisa diberi catatan internal / dibuka timeline-nya.
+enum EntityType {
+  ACCOUNT
+  CONTACT
+  DEAL
+  TICKET
+}
+
+enum NotificationType {
+  MENTION
+  TICKET_ASSIGNED
+}
+
+/// Catatan internal tim (tidak pernah terlihat customer). Polimorfik:
+/// (entityType, entityId) menunjuk Account/Contact/Deal/Ticket.
+model Note {
+  id         String     @id @default(cuid())
+  entityType EntityType
+  entityId   String
+  body       String
+  authorId   String
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  author   User          @relation("NoteAuthor", fields: [authorId], references: [id])
+  mentions NoteMention[]
+
+  @@index([entityType, entityId, createdAt])
+  @@map("notes")
+}
+
+/// Rekan yang di-@mention di catatan. Di-mention = ikut boleh membuka
+/// entitas tersebut (berbagi konteks tanpa memindahkan kepemilikan).
+model NoteMention {
+  noteId String
+  userId String
+
+  note Note @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([noteId, userId])
+  @@index([userId])
+  @@map("note_mentions")
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  userId     String
+  type       NotificationType
+  title      String
+  body       String?
+  /// Tautan ke entitas terkait (dibuka saat notifikasi diklik).
+  entityType EntityType?
+  entityId   String?
+  actorId    String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  user  User  @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
 }

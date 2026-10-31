@@ -8,7 +8,7 @@
 // =============================================================================
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { timingSafeEqual } from "node:crypto";
-import { PipelineStage } from "@prisma/client";
+import { Channel, PipelineStage } from "@prisma/client";
 import { z } from "zod";
 import { env } from "../../config/env";
 import { currentUser, requireAgent } from "../../lib/auth";
@@ -55,6 +55,8 @@ const IncomingSchema = z.object({
   contactName: z.string().max(200).optional(),
   contactPhone: z.string().max(50).optional(),
   contactEmail: z.email().optional(),
+  /** Inbox multi-channel: WHATSAPP (default), WEB_CHAT, INSTAGRAM, FACEBOOK, EMAIL. */
+  channel: z.enum(Channel).optional(),
 });
 
 chatRouter.post("/webhook/incoming-message", verifyWebhookSecret, async (req, res) => {

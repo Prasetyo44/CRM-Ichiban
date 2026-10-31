@@ -3,6 +3,8 @@
 export type CustomerType = "B2B" | "B2C";
 export type PipelineStage = "NEW" | "CONTACTED" | "PROPOSAL" | "CLOSED";
 export type MessageSender = "CUSTOMER" | "AI" | "AGENT" | "SYSTEM";
+export type Channel = "WHATSAPP" | "WEB_CHAT" | "INSTAGRAM" | "FACEBOOK" | "EMAIL";
+export type EntityType = "ACCOUNT" | "CONTACT" | "DEAL" | "TICKET";
 export type ChatSessionStatus = "ai_qualifying" | "pending_assignment" | "assigned_to_human" | "closed";
 
 export interface MessageDTO {
@@ -39,6 +41,7 @@ export interface LeadDTO {
 
 export interface SessionDTO {
   id: string;
+  channel: Channel;
   status: ChatSessionStatus;
   assignedAgentId: string | null;
   assignedAt: string | null;
@@ -51,6 +54,19 @@ export interface ServerToClientEvents {
   "session:assigned": (payload: { session: SessionDTO; messages: MessageDTO[] }) => void;
   "message:new": (payload: MessageDTO) => void;
   "lead:updated": (payload: LeadDTO) => void;
+  "notification:new": (payload: NotificationDTO) => void;
+}
+
+export interface NotificationDTO {
+  id: string;
+  type: "MENTION" | "TICKET_ASSIGNED";
+  title: string;
+  body: string | null;
+  entityType: EntityType | null;
+  entityId: string | null;
+  actor: { id: string; name: string } | null;
+  readAt: string | null;
+  createdAt: string;
 }
 
 export type ClientToServerEvents = Record<string, never>;

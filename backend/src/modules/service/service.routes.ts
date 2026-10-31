@@ -14,6 +14,7 @@ import { currentUser, isManager, type AuthUser } from "../../lib/auth";
 import { nextDocumentNumber } from "../../lib/document-number";
 import { HttpError, notFound } from "../../lib/http-error";
 import { prisma } from "../../lib/prisma";
+import { notifyUsers } from "../collaboration/notify";
 import { computeDueDates, ticketSla } from "./sla";
 
 /** Dipasang di server.ts di belakang middleware `requireAgent`. */
@@ -109,6 +110,16 @@ serviceRouter.post("/tickets", async (req, res) => {
       include: listInclude,
     }),
   );
+  if (ticket.assigneeId) {
+    await notifyUsers({
+      userIds: [ticket.assigneeId],
+      type: "TICKET_ASSIGNED",
+      title: `Tiket ${ticket.number} ditugaskan ke Anda`,
+      body: ticket.subject,
+      entity: { type: "TICKET", id: ticket.id },
+      actorId: user.id,
+    });
+  }
   res.status(201).json(withSla(ticket));
 });
 
@@ -171,6 +182,16 @@ serviceRouter.patch("/tickets/:id", async (req, res) => {
   }
 
   const ticket = await prisma.ticket.update({ where: { id: existing.id }, data, include: listInclude });
+  if (ticket.assigneeId && ticket.assigneeId !== existing.assigneeId) {
+    await notifyUsers({
+      userIds: [ticket.assigneeId],
+      type: "TICKET_ASSIGNED",
+      title: `Tiket ${ticket.number} ditugaskan ke Anda`,
+      body: ticket.subject,
+      entity: { type: "TICKET", id: ticket.id },
+      actorId: user.id,
+    });
+  }
   res.json(withSla(ticket));
 });
 
