@@ -15,6 +15,8 @@ export function useApi(apiBaseUrl: string, agentId: string): ApiFn {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
+      // 204 No Content (mis. DELETE) tidak punya body JSON.
+      if (res.status === 204) return undefined as T;
       return (await res.json()) as T;
     },
     [apiBaseUrl, agentId],

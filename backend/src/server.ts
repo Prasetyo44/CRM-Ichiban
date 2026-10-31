@@ -9,6 +9,8 @@ import { requireAgent } from "./lib/auth";
 import { HttpError } from "./lib/http-error";
 import { chatRouter } from "./modules/chat/chat.routes";
 import { analyticsRouter } from "./modules/analytics/analytics.routes";
+import { startCampaignScheduler } from "./modules/marketing/campaign.service";
+import { marketingRouter } from "./modules/marketing/marketing.routes";
 import { salesRouter } from "./modules/sales/sales.routes";
 import { serviceRouter } from "./modules/service/service.routes";
 import { initSocket } from "./realtime/socket";
@@ -22,7 +24,7 @@ app.get("/health", (_req, res) => {
 });
 app.use(chatRouter);
 // Semua modul CRM di bawah /api wajib login agent.
-app.use("/api", requireAgent, salesRouter, serviceRouter, analyticsRouter);
+app.use("/api", requireAgent, salesRouter, serviceRouter, analyticsRouter, marketingRouter);
 
 // Error handler terpusat (Express 5 meneruskan error async secara otomatis).
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
@@ -44,9 +46,12 @@ initSocket(httpServer, env.CORS_ORIGIN);
 httpServer.listen(env.PORT, () => {
   console.info(`CRM Ichiban backend berjalan di http://localhost:${env.PORT}`);
 });
+// Meluncurkan kampanye terjadwal & melanjutkan broadcast yang terputus saat restart.
+const stopScheduler = startCampaignScheduler();
 
 // Graceful shutdown: tutup koneksi DB saat proses dihentikan.
 const shutdown = async (): Promise<void> => {
+  stopScheduler();
   httpServer.close();
   await prisma.$disconnect();
   process.exit(0);
