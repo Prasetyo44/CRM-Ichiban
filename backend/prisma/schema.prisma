@@ -1,0 +1,210 @@
+// =============================================================================
+// LANGKAH 1 — SKEMA DATABASE (Prisma + PostgreSQL)
+// -----------------------------------------------------------------------------
+// Alur data:
+//   Webhook pesan masuk  -> Lead (perusahaan) + ChatSession (status ai_qualifying)
+//   AI Agent (Claude)    -> menentukan segmen (B2B/B2C) + lini produk Ichiban,
+//                           mengisi data Lead + ringkasan
+//   Routing Round Robin  -> AgentSkill (lini produk x segmen) -> ChatSession.assignedAgentId
+//                           + User.lastAssignedAt
+//   Dashboard Sales      -> membaca ChatSession + Message milik agent tersebut
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// ENUM
+// -----------------------------------------------------------------------------
+
+/// Segmen customer. Menentukan data apa yang dikualifikasi AI dan tim mana yang menangani.
+/// - B2B: perusahaan/kontraktor/pabrik/galangan/percetakan (pembelian volume, proyek).
+/// - B2C: konsumen perorangan / pembeli eceran (rumah, renovasi, hobi).
+enum CustomerType {
+  B2B
+  B2C
+}
+
+/// Peran pengguna internal CRM.
+enum UserRole {
+  ADMIN
+  SALES_MANAGER
+  SALES_AGENT
+}
+
+/// Status sesi chat.
+/// - ai_qualifying      : AI Agent masih menanyai calon customer.
+/// - pending_assignment : kualifikasi selesai, tetapi belum ada sales yang tersedia
+///                        (antrean; akan di-assign ulang oleh job/admin).
+/// - assigned_to_human  : sesi sudah dipegang Sales Agent, AI berhenti total.
+/// - closed             : sesi ditutup.
+enum ChatSessionStatus {
+  ai_qualifying
+  pending_assignment
+  assigned_to_human
+  closed
+}
+
+/// Tahapan pipeline penjualan untuk Lead (ditampilkan di sidebar kanan dashboard).
+enum PipelineStage {
+  NEW
+  CONTACTED
+  PROPOSAL
+  CLOSED
+}
+
+/// Pengirim sebuah pesan.
+enum MessageSender {
+  CUSTOMER
+  AI
+  AGENT
+  SYSTEM
+}
+
+// -----------------------------------------------------------------------------
+// MODEL
+// -----------------------------------------------------------------------------
+
+/// User/Agent internal. Sales Agent memiliki daftar skill industri.
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  role           UserRole  @default(SALES_AGENT)
+  /// Agent non-aktif (cuti/resign) tidak ikut rotasi round robin.
+  isActive       Boolean   @default(true)
+  /// Kunci algoritma Round Robin: agent dengan nilai paling lama (atau NULL =
+  /// belum pernah menerima lead) dipilih lebih dulu.
+  lastAssignedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  /// Spesialisasi agent: kombinasi lini produk x segmen (lihat AgentSkill).
+  skills           AgentSkill[]
+  assignedSessions ChatSession[] @relation("AssignedAgent")
+  sentMessages     Message[]     @relation("MessageAuthor")
+
+  // Index untuk query routing: filter role+isActive lalu urutkan lastAssignedAt.
+  @@index([role, isActive, lastAssignedAt])
+  @@map("users")
+}
+
+/// Katalog lini produk Ichiban / PT Warnatama Cemerlang. Disimpan di database
+/// (bukan enum) supaya admin bisa menambah lini produk baru tanpa deploy ulang;
+/// prompt & skema JSON AI dibangun dinamis dari tabel ini.
+model ProductLine {
+  id          String         @id @default(cuid())
+  /// Kode stabil yang dipakai AI & routing, mis. "MARINE_PAINT".
+  code        String         @unique
+  /// Nama tampilan, mis. "Ichiban Marine Paint".
+  name        String
+  /// Deskripsi singkat untuk membantu AI mengenali lini produk dari pertanyaan customer.
+  description String
+  /// Fakta resmi yang BOLEH disampaikan AI ke customer (diisi tim marketing).
+  /// AI dilarang mengarang spesifikasi/harga di luar teks ini.
+  aiKnowledge String?
+  /// Segmen yang dilayani lini produk ini.
+  segments    CustomerType[]
+  isActive    Boolean        @default(true)
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  agentSkills AgentSkill[]
+  leads       Lead[]
+
+  @@map("product_lines")
+}
+
+/// Skill agent = (lini produk, segmen). Contoh: Citra menangani
+/// (MARINE_PAINT, B2B) dan (INDUSTRIAL_PAINT, B2B); tim retail menangani (RETAIL_PAINT, B2C).
+model AgentSkill {
+  agentId       String
+  productLineId String
+  customerType  CustomerType
+
+  agent       User        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  productLine ProductLine @relation(fields: [productLineId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, productLineId, customerType])
+  // Index utama query routing: "siapa saja yang bisa menangani lini X segmen Y?"
+  @@index([productLineId, customerType])
+  @@map("agent_skills")
+}
+
+/// Lead = calon customer, perusahaan (B2B) maupun perorangan (B2C).
+model Lead {
+  id            String        @id @default(cuid())
+  /// ID eksternal dari channel (mis. nomor WhatsApp / ID widget chat).
+  externalId    String        @unique
+  customerType  CustomerType?
+  productLineId String?
+  /// Nama orang yang chat (B2C: customer itu sendiri; B2B: PIC perusahaan).
+  contactName   String?
+  contactPhone  String?
+  contactEmail  String?
+  /// Kota/lokasi: penting untuk B2C (rujukan toko/dealer terdekat) & ongkos kirim B2B.
+  city          String?
+  // --- khusus B2B ---
+  companyName    String?
+  /// Skala perusahaan hasil kualifikasi (mis. "UMKM <50 karyawan", "Enterprise").
+  companyScale   String?
+  /// Bidang usaha customer B2B, mis. "Galangan kapal", "Percetakan kemasan".
+  businessSector String?
+  /// Rangkuman kebutuhan dari AI, ditampilkan di "AI Summary Box".
+  aiSummary     String?
+  pipelineStage PipelineStage @default(NEW)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  productLine ProductLine?  @relation(fields: [productLineId], references: [id], onDelete: SetNull)
+  sessions    ChatSession[]
+
+  @@index([customerType, productLineId])
+  @@index([pipelineStage])
+  @@map("leads")
+}
+
+/// Sesi percakapan antara Lead dan (AI -> Sales Agent).
+model ChatSession {
+  id              String            @id @default(cuid())
+  leadId          String
+  status          ChatSessionStatus @default(ai_qualifying)
+  assignedAgentId String?
+  assignedAt      DateTime?
+  qualifiedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  lead          Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedAgent User?     @relation("AssignedAgent", fields: [assignedAgentId], references: [id], onDelete: SetNull)
+  messages      Message[]
+
+  // Dashboard sales: "semua sesi milik agent X, urut terbaru".
+  @@index([assignedAgentId, status, updatedAt])
+  @@index([leadId, status])
+  @@map("chat_sessions")
+}
+
+/// Satu pesan di dalam sesi chat.
+model Message {
+  id        String        @id @default(cuid())
+  sessionId String
+  sender    MessageSender
+  /// Diisi bila sender = AGENT (siapa sales yang membalas).
+  authorId  String?
+  content   String
+  createdAt DateTime      @default(now())
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  author  User?       @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, createdAt])
+  @@map("messages")
+}
