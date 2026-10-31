@@ -32,6 +32,8 @@ export interface LeadDTO {
   companyScale: string | null;
   businessSector: string | null;
   aiSummary: string | null;
+  /** Terisi bila lead sudah dikonversi menjadi Deal. */
+  convertedAt: string | null;
   pipelineStage: PipelineStage;
 }
 

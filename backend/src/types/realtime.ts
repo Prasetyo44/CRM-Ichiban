@@ -35,6 +35,7 @@ export interface LeadDTO {
   companyScale: string | null;
   businessSector: string | null;
   aiSummary: string | null;
+  convertedAt: string | null;
   pipelineStage: PipelineStage;
 }
 

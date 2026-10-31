@@ -87,6 +87,13 @@ model User {
 
   /// Spesialisasi agent: kombinasi lini produk x segmen (lihat AgentSkill).
   skills           AgentSkill[]
+  ownedAccounts    Account[]     @relation("AccountOwner")
+  ownedContacts    Contact[]     @relation("ContactOwner")
+  ownedDeals       Deal[]        @relation("DealOwner")
+  activities       Activity[]    @relation("ActivityAuthor")
+  assignedTasks    Task[]        @relation("TaskAssignee")
+  createdTasks     Task[]        @relation("TaskCreator")
+  quotations       Quotation[]   @relation("QuotationCreator")
   assignedSessions ChatSession[] @relation("AssignedAgent")
   sentMessages     Message[]     @relation("MessageAuthor")
 
@@ -118,6 +125,7 @@ model ProductLine {
 
   agentSkills AgentSkill[]
   leads       Lead[]
+  deals       Deal[]
 
   @@map("product_lines")
 }
@@ -140,17 +148,17 @@ model AgentSkill {
 
 /// Lead = calon customer, perusahaan (B2B) maupun perorangan (B2C).
 model Lead {
-  id            String        @id @default(cuid())
+  id             String        @id @default(cuid())
   /// ID eksternal dari channel (mis. nomor WhatsApp / ID widget chat).
-  externalId    String        @unique
-  customerType  CustomerType?
-  productLineId String?
+  externalId     String        @unique
+  customerType   CustomerType?
+  productLineId  String?
   /// Nama orang yang chat (B2C: customer itu sendiri; B2B: PIC perusahaan).
-  contactName   String?
-  contactPhone  String?
-  contactEmail  String?
+  contactName    String?
+  contactPhone   String?
+  contactEmail   String?
   /// Kota/lokasi: penting untuk B2C (rujukan toko/dealer terdekat) & ongkos kirim B2B.
-  city          String?
+  city           String?
   // --- khusus B2B ---
   companyName    String?
   /// Skala perusahaan hasil kualifikasi (mis. "UMKM <50 karyawan", "Enterprise").
@@ -158,12 +166,19 @@ model Lead {
   /// Bidang usaha customer B2B, mis. "Galangan kapal", "Percetakan kemasan".
   businessSector String?
   /// Rangkuman kebutuhan dari AI, ditampilkan di "AI Summary Box".
-  aiSummary     String?
-  pipelineStage PipelineStage @default(NEW)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  aiSummary      String?
+  pipelineStage  PipelineStage @default(NEW)
+  /// Terisi setelah lead dikonversi menjadi Account/Contact/Deal.
+  accountId      String?
+  contactId      String?
+  convertedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   productLine ProductLine?  @relation(fields: [productLineId], references: [id], onDelete: SetNull)
+  account     Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  contact     Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  deal        Deal?
   sessions    ChatSession[]
 
   @@index([customerType, productLineId])
@@ -207,4 +222,251 @@ model Message {
 
   @@index([sessionId, createdAt])
   @@map("messages")
+}
+
+// =============================================================================
+// MODUL SALES (CRM Operasional)
+// -----------------------------------------------------------------------------
+// Lead (hasil chat) -> dikonversi menjadi Account (perusahaan, B2B) + Contact
+// (orang) + Deal (peluang penjualan). Deal bergerak di pipeline, dilengkapi
+// Activity (log interaksi), Task (tindak lanjut), dan Quotation (penawaran).
+// =============================================================================
+
+enum DealStage {
+  QUALIFICATION
+  NEEDS_ANALYSIS
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum ActivityType {
+  CALL
+  MEETING
+  EMAIL
+  WHATSAPP
+  VISIT
+  NOTE
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+/// Perusahaan/organisasi customer (B2B). Customer B2C cukup berupa Contact tanpa Account.
+model Account {
+  id             String       @id @default(cuid())
+  name           String
+  customerType   CustomerType @default(B2B)
+  businessSector String?
+  scale          String?
+  city           String?
+  address        String?
+  phone          String?
+  email          String?
+  /// NPWP untuk kebutuhan faktur pajak B2B.
+  taxId          String?
+  ownerId        String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  owner      User        @relation("AccountOwner", fields: [ownerId], references: [id])
+  contacts   Contact[]
+  deals      Deal[]
+  activities Activity[]
+  tasks      Task[]
+  quotations Quotation[]
+  leads      Lead[]
+
+  @@index([ownerId])
+  @@index([name])
+  @@map("accounts")
+}
+
+/// Orang: PIC perusahaan (B2B) atau customer perorangan (B2C).
+model Contact {
+  id        String   @id @default(cuid())
+  accountId String?
+  name      String
+  jobTitle  String?
+  phone     String?
+  email     String?
+  city      String?
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  account    Account?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  owner      User       @relation("ContactOwner", fields: [ownerId], references: [id])
+  deals      Deal[]
+  activities Activity[]
+  tasks      Task[]
+  leads      Lead[]
+
+  @@index([ownerId])
+  @@index([accountId])
+  @@index([phone])
+  @@map("contacts")
+}
+
+/// Peluang penjualan. Nilai uang memakai Decimal (bukan float) agar tidak ada galat pembulatan.
+model Deal {
+  id                String       @id @default(cuid())
+  title             String
+  customerType      CustomerType
+  stage             DealStage    @default(QUALIFICATION)
+  amount            Decimal      @default(0) @db.Decimal(18, 2)
+  currency          String       @default("IDR")
+  /// Peluang menang (0-100). Default mengikuti stage, bisa diubah manual.
+  probability       Int          @default(10)
+  expectedCloseDate DateTime?
+  lostReason        String?
+  stageChangedAt    DateTime     @default(now())
+  closedAt          DateTime?
+  accountId         String?
+  contactId         String?
+  leadId            String?      @unique
+  productLineId     String?
+  ownerId           String
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  account     Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  contact     Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  productLine ProductLine? @relation(fields: [productLineId], references: [id], onDelete: SetNull)
+  owner       User         @relation("DealOwner", fields: [ownerId], references: [id])
+  activities  Activity[]
+  tasks       Task[]
+  quotations  Quotation[]
+
+  @@index([ownerId, stage])
+  @@index([productLineId, stage])
+  @@index([accountId])
+  @@map("deals")
+}
+
+/// Log interaksi (telepon, meeting, kunjungan, catatan) — membentuk timeline customer.
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  subject     String
+  notes       String?
+  occurredAt  DateTime     @default(now())
+  durationMin Int?
+  authorId    String
+  dealId      String?
+  accountId   String?
+  contactId   String?
+  createdAt   DateTime     @default(now())
+
+  author  User     @relation("ActivityAuthor", fields: [authorId], references: [id])
+  deal    Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  account Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([dealId, occurredAt])
+  @@index([accountId, occurredAt])
+  @@index([contactId, occurredAt])
+  @@map("activities")
+}
+
+/// Tugas tindak lanjut dengan tenggat & prioritas.
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  dueAt       DateTime?
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(OPEN)
+  completedAt DateTime?
+  assigneeId  String
+  createdById String
+  dealId      String?
+  accountId   String?
+  contactId   String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  assignee  User     @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy User     @relation("TaskCreator", fields: [createdById], references: [id])
+  deal      Deal?    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  account   Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([assigneeId, status, dueAt])
+  @@index([dealId])
+  @@map("tasks")
+}
+
+/// Penawaran harga. Total dihitung di server dari item (tidak dipercaya dari klien).
+model Quotation {
+  id          String          @id @default(cuid())
+  /// Nomor unik berurutan per bulan, mis. "QUO-202610-0007".
+  number      String          @unique
+  dealId      String
+  accountId   String?
+  status      QuotationStatus @default(DRAFT)
+  validUntil  DateTime?
+  notes       String?
+  subtotal    Decimal         @db.Decimal(18, 2)
+  discount    Decimal         @default(0) @db.Decimal(18, 2)
+  /// Persentase PPN, mis. 11.00.
+  taxPercent  Decimal         @default(11) @db.Decimal(5, 2)
+  taxAmount   Decimal         @db.Decimal(18, 2)
+  total       Decimal         @db.Decimal(18, 2)
+  createdById String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  deal      Deal            @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  account   Account?        @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdBy User            @relation("QuotationCreator", fields: [createdById], references: [id])
+  items     QuotationItem[]
+
+  @@index([dealId])
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id          String  @id @default(cuid())
+  quotationId String
+  productName String
+  sku         String?
+  quantity    Decimal @db.Decimal(18, 3)
+  /// Satuan, mis. "pail 20L", "galon", "kg".
+  unit        String
+  unitPrice   Decimal @db.Decimal(18, 2)
+  discountPct Decimal @default(0) @db.Decimal(5, 2)
+  lineTotal   Decimal @db.Decimal(18, 2)
+  sortOrder   Int     @default(0)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@map("quotation_items")
+}
+
+/// Penghitung atomik (nomor dokumen berurutan) — aman dipakai paralel.
+model Counter {
+  key   String @id
+  value Int    @default(0)
+
+  @@map("counters")
 }

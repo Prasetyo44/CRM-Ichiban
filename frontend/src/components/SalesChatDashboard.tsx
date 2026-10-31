@@ -12,6 +12,7 @@
 // =============================================================================
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { io, type Socket } from "socket.io-client";
+import { errorMessage, useApi } from "../lib/api";
 import type {
   ClientToServerEvents,
   CustomerType,
@@ -78,24 +79,6 @@ export interface SalesChatDashboardProps {
 
 type ConnectionState = "connecting" | "online" | "offline";
 
-/** Wrapper fetch bertipe yang selalu menyertakan identitas agent. */
-function useApi(apiBaseUrl: string, agentId: string) {
-  return useCallback(
-    async <T,>(path: string, init?: RequestInit): Promise<T> => {
-      const res = await fetch(`${apiBaseUrl}${path}`, {
-        ...init,
-        headers: { "Content-Type": "application/json", "x-agent-id": agentId, ...init?.headers },
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      }
-      return (await res.json()) as T;
-    },
-    [apiBaseUrl, agentId],
-  );
-}
-
 /** Tambahkan pesan tanpa duplikasi (balasan REST & echo socket bisa datang bersamaan). */
 const appendUnique = (list: MessageDTO[] = [], message: MessageDTO): MessageDTO[] =>
   list.some((m) => m.id === message.id) ? list : [...list, message];
@@ -127,7 +110,7 @@ export default function SalesChatDashboard({ apiBaseUrl, agentId }: SalesChatDas
         setSessions(list);
         setActiveId((current) => current ?? list[0]?.id ?? null);
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setError(errorMessage(e)));
   }, [api, agentId]);
 
   // --- 2. Muat histori pesan saat sesi dipilih (sekali per sesi, lalu cache) ---
@@ -135,7 +118,7 @@ export default function SalesChatDashboard({ apiBaseUrl, agentId }: SalesChatDas
     if (!activeId || messagesBySession[activeId]) return;
     api<MessageDTO[]>(`/api/sessions/${activeId}/messages`)
       .then((list) => setMessagesBySession((prev) => ({ ...prev, [activeId]: list })))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setError(errorMessage(e)));
   }, [api, activeId, messagesBySession]);
 
   // --- 3. Koneksi real-time Socket.IO ---------------------------------------
@@ -211,7 +194,23 @@ export default function SalesChatDashboard({ apiBaseUrl, agentId }: SalesChatDas
         });
       } catch (e) {
         applyStage(lead.pipelineStage);
-        setError(e instanceof Error ? e.message : String(e));
+        setError(errorMessage(e));
+      }
+    },
+    [api],
+  );
+
+  // --- 6. Aksi: konversi lead -> Account/Contact/Deal (modul Sales) ---------
+  const convertLead = useCallback(
+    async (lead: LeadDTO): Promise<void> => {
+      try {
+        await api(`/api/leads/${lead.id}/convert`, { method: "POST" });
+        const convertedAt = new Date().toISOString();
+        setSessions((prev) =>
+          prev.map((s) => (s.lead.id === lead.id ? { ...s, lead: { ...s.lead, convertedAt } } : s)),
+        );
+      } catch (e) {
+        setError(errorMessage(e));
       }
     },
     [api],
@@ -219,14 +218,14 @@ export default function SalesChatDashboard({ apiBaseUrl, agentId }: SalesChatDas
 
   if (!agentId) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-100 text-slate-600">
+      <div className="flex h-full items-center justify-center bg-slate-100 text-slate-600">
         Agent belum login (isi VITE_AGENT_ID).
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col bg-slate-100 text-slate-900">
+    <div className="flex h-full min-h-0 flex-col bg-slate-100 text-slate-900">
       <TopBar connection={connection} error={error} onDismissError={() => setError(null)} />
       <div className="grid min-h-0 flex-1 grid-cols-[18rem_1fr_20rem]">
         <SessionList sessions={sessions} activeId={activeId} onSelect={setActiveId} />
@@ -240,7 +239,7 @@ export default function SalesChatDashboard({ apiBaseUrl, agentId }: SalesChatDas
           <EmptyState text="Belum ada chat. Lead baru dari AI akan muncul otomatis di sini." />
         )}
         {activeSession ? (
-          <LeadProfilePanel lead={activeSession.lead} onChangeStage={updatePipeline} />
+          <LeadProfilePanel lead={activeSession.lead} onChangeStage={updatePipeline} onConvert={convertLead} />
         ) : (
           <aside className="border-l border-slate-200 bg-white" />
         )}
@@ -486,9 +485,12 @@ function MessageBubble({ message }: { message: MessageDTO }) {
 function LeadProfilePanel({
   lead,
   onChangeStage,
+  onConvert,
 }: {
   lead: LeadDTO;
   onChangeStage: (lead: LeadDTO, stage: PipelineStage) => Promise<void>;
+  /** Konversi lead menjadi Account/Contact/Deal di modul Sales. */
+  onConvert: (lead: LeadDTO) => Promise<void>;
 }) {
   const currentIndex = PIPELINE_STAGES.findIndex((s) => s.value === lead.pipelineStage);
 
@@ -524,6 +526,15 @@ function LeadProfilePanel({
           ))}
         </dl>
       </section>
+
+      <button
+        type="button"
+        disabled={lead.convertedAt !== null}
+        onClick={() => void onConvert(lead)}
+        className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-emerald-100 disabled:text-emerald-800"
+      >
+        {lead.convertedAt ? "✓ Sudah menjadi Deal (lihat menu Pipeline)" : "Konversi ke Deal"}
+      </button>
 
       <section>
         <h3 className="mb-3 text-sm font-semibold text-slate-600">Status Pipeline</h3>

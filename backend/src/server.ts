@@ -5,7 +5,9 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { ZodError } from "zod";
 import { env } from "./config/env";
 import { prisma } from "./lib/prisma";
-import { chatRouter, HttpError } from "./modules/chat/chat.routes";
+import { HttpError } from "./lib/http-error";
+import { chatRouter } from "./modules/chat/chat.routes";
+import { salesRouter } from "./modules/sales/sales.routes";
 import { initSocket } from "./realtime/socket";
 
 const app = express();
@@ -16,6 +18,7 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 app.use(chatRouter);
+app.use("/api", salesRouter);
 
 // Error handler terpusat (Express 5 meneruskan error async secara otomatis).
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

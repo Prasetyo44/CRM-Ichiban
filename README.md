@@ -77,7 +77,27 @@ frontend/
   5. Pesan dari customer yang sama diserialisasi (`KeyedMutex`) agar Claude tidak dipanggil paralel. Untuk multi-instance, ganti dengan Redis lock atau antrean per sesi.
 - **Isolasi data.** Socket room `agent:<id>` dan setiap endpoint REST memeriksa `assignedAgentId`, jadi sales hanya melihat lead miliknya.
 
-## 5. Menjalankan
+## 5. Modul CRM
+
+| Modul | Jenis CRM | Status | Isi |
+|---|---|---|---|
+| Inbox Chat + AI | Operasional | ✅ | Kualifikasi AI B2B/B2C, routing round robin, chat real-time |
+| Sales | Operasional | ✅ | Account (perusahaan), Contact, konversi Lead → Deal, pipeline 6 stage, aktivitas, tugas, quotation (PPN, nomor otomatis) |
+| Service | Operasional | ⏳ | Tiket keluhan/komplain + SLA |
+| Marketing | Operasional | ⏳ | Segmen & kampanye broadcast |
+| Analitik | Analitis | ⏳ | Dashboard KPI, funnel, performa sales/lini produk |
+| Kolaborasi | Kolaboratif | ⏳ | Catatan internal, @mention, timeline 360°, inbox multi-channel |
+
+**Modul Sales:**
+- **Konversi lead** (`POST /api/leads/:id/convert`) membuat Account + Contact + Deal untuk B2B, atau Contact + Deal untuk B2C. Ringkasan AI ikut menjadi catatan pertama di timeline. Prosesnya idempoten dan aman bila diklik ganda.
+- **Pipeline:** Kualifikasi → Analisis Kebutuhan → Penawaran → Negosiasi → Menang/Kalah. Probabilitas default per stage dipakai untuk forecast berbobot. Status Kalah wajib diberi alasan, dan setiap perpindahan stage tercatat di timeline.
+- **Quotation:** total dihitung di server dengan Decimal (diskon per item, diskon nota, PPN). Nomor `QUO-YYYYMM-0001` dibuat lewat counter atomik, sehingga tidak bisa dobel walau dibuat bersamaan. Nilai deal otomatis mengikuti quotation terakhir.
+- **Hak akses:** sales agent hanya melihat data miliknya, sedangkan `SALES_MANAGER`/`ADMIN` melihat semua dan bisa memindahkan kepemilikan.
+
+![Pipeline](docs/screenshots/pipeline.png)
+![Detail deal](docs/screenshots/deal-detail.png)
+
+## 6. Menjalankan
 
 ```bash
 # Backend
@@ -109,7 +129,7 @@ curl -X POST http://localhost:4000/webhook/incoming-message \
 
 Nilai `mode` pada respons: `ai_replied` (masih kualifikasi), `handed_off` (baru dialihkan ke sales), `forwarded_to_agent` (AI diam, pesan diteruskan ke sales), atau `waiting_for_agent`.
 
-## 6. Sebelum produksi
+## 7. Sebelum produksi
 
 - Ganti autentikasi simulasi (`x-agent-id` / `auth.agentId`) dengan JWT.
 - Isi `modules/chat/outbound.ts` dengan API channel sebenarnya (mis. WhatsApp Cloud API).

@@ -29,6 +29,7 @@ export const toLeadDTO = (l: LeadWithLine): LeadDTO => ({
   companyScale: l.companyScale,
   businessSector: l.businessSector,
   aiSummary: l.aiSummary,
+  convertedAt: l.convertedAt?.toISOString() ?? null,
   pipelineStage: l.pipelineStage,
 });
 
